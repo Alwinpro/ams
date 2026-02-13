@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>SecureFace Access | Premium Attendance</title>
+
+    <!-- CSS -->
+    <link rel="stylesheet" href="style.css">
+
+    <!-- PWA -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#1a1a2e">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+    <!-- Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+
+    <!-- Scripts (Deferred) -->
+    <!-- Firebase SDKs -->
+    <script defer src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script defer src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script defer src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+
+    <!-- Face API & QR & PDF -->
+    <script defer src="face-api.min.js"></script>
+    <script defer src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+    <script defer src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script defer
+        src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.29/jspdf.plugin.autotable.min.js"></script>
+    <script defer src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
+
+    <!-- Main App -->
+    <script>
+        (function () {
+            var ua = navigator.userAgent;
+            var isLegacy = false;
+            if (ua.indexOf("Android") >= 0) {
+                var androidVersion = parseFloat(ua.slice(ua.indexOf("Android") + 8));
+                if (androidVersion < 5.0) isLegacy = true;
+            }
+            if (!window.Promise || !window.fetch) isLegacy = true;
+
+            if (isLegacy) {
+                // Stop loading modern app.js by hijacking the tag or just redirecting immediately
+                window.location.href = 'index-legacy.html';
+            }
+        })();
+    </script>
+    <script defer src="app.js"></script>
+</head>
+
+<body>
+    <div id="loading-overlay">
+        <div class="glass-loader"></div>
+        <p>Initializing Secure System...</p>
+    </div>
+
+    <!-- Login Modal (Hidden by Default) -->
+    <div id="auth-modal" class="modal-overlay" style="display: none;">
+        <div class="glass-card login-card">
+            <button id="close-auth-modal" class="close-modal-btn"><i class="fas fa-times"></i></button>
+            <h2><i class="fas fa-shield-alt"></i> Admin Access</h2>
+            <form id="login-form">
+                <div class="input-group">
+                    <i class="fas fa-envelope"></i>
+                    <input type="email" id="login-email" placeholder="Admin Email" required>
+                </div>
+                <div class="input-group">
+                    <i class="fas fa-lock"></i>
+                    <input type="password" id="login-password" placeholder="Password" required>
+                </div>
+                <button type="submit" class="btn-primary">Login</button>
+                <p style="margin-top: 10px; font-size: 0.9rem;">
+                    Don't have an account? <a href="#" id="toggle-auth">Sign Up</a>
+                </p>
+            </form>
+
+            <form id="signup-form" style="display: none;">
+                <div class="input-group">
+                    <i class="fas fa-envelope"></i>
+                    <input type="email" id="signup-email" placeholder="New Admin Email" required>
+                </div>
+                <div class="input-group">
+                    <i class="fas fa-lock"></i>
+                    <input type="password" id="signup-password" placeholder="New Password" required>
+                </div>
+                <button type="submit" class="btn-secondary">Create Account</button>
+                <p style="margin-top: 10px; font-size: 0.9rem;">
+                    Already have an account? <a href="#" id="toggle-login">Login</a>
+                </p>
+            </form>
+            <p id="auth-message" class="error-msg"></p>
+        </div>
+    </div>
+
+    <!-- Crop Modal -->
+    <div id="crop-modal" class="modal-overlay" style="display: none; z-index: 2000;">
+        <div class="glass-card crop-card"
+            style="width: 90%; max-width: 500px; height: 80vh; display: flex; flex-direction: column; padding: 1.5rem;">
+            <h3 style="margin-bottom: 1rem;">Adjust Photo</h3>
+            <div class="crop-container"
+                style="flex: 1; background: #000; position: relative; overflow: hidden; border-radius: 8px;">
+                <img id="image-to-crop" src="" alt="Crop Preview" style="max-width: 100%; display: block;">
+            </div>
+            <div class="crop-actions" style="display: flex; gap: 1rem; padding-top: 1rem; justify-content: flex-end;">
+                <button id="btn-cancel-crop" class="btn-secondary">Cancel</button>
+                <button id="btn-confirm-crop" class="btn-primary">Crop & Use</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main App (Always Visible for Scanning) -->
+    <div id="dashboard-container">
+        <nav class="glass-nav">
+            <div class="nav-brand">
+                <i class="fas fa-user-shield"></i> PremiumAccess
+            </div>
+            <div class="nav-links">
+                <!-- Navigation -->
+                <ul id="nav-list">
+                    <li data-target="dashboard-view" class="active"><i class="fas fa-home"></i> Scan</li>
+                    <li data-target="register-view" class="admin-only" style="display: none;"><i
+                            class="fas fa-user-plus"></i> Register</li>
+                    <li data-target="users-view" class="admin-only" style="display: none;"><i class="fas fa-users"></i>
+                        Users</li>
+                    <li data-target="logs-view" class="admin-only" style="display: none;"><i
+                            class="fas fa-file-alt"></i> Logs</li>
+                    <li id="login-btn-nav"><i class="fas fa-sign-in-alt"></i> Login</li>
+                    <li id="install-app-btn" style="display: none;"><i class="fas fa-download"></i> Install</li>
+                    <li id="logout-btn" style="display: none;"><i class="fas fa-sign-out-alt"></i> Logout</li>
+                </ul>
+            </div>
+        </nav>
+
+        <main>
+            <!-- Attendance View (Default) -->
+            <section id="dashboard-view" class="view active">
+                <div class="status-bar glass-panel">
+                    <div class="clock-widget">
+                        <span id="current-time">00:00:00</span>
+                        <span id="current-date">Mon, Jan 01</span>
+                    </div>
+                </div>
+
+                <!-- PWA Install Banner (Visible only when installable) -->
+                <div id="pwa-install-banner" class="glass-panel install-banner"
+                    style="display: none; margin-bottom: 2rem; padding: 1.5rem; text-align: center; border: 1px solid var(--secondary);">
+                    <h3 style="color: var(--secondary); margin-bottom: 0.5rem;"><i class="fas fa-rocket"></i> Get the
+                        App</h3>
+                    <p style="margin-bottom: 1.5rem; color: var(--text-muted);">Install SecureFace Access on your device
+                        for a faster, full-screen experience.</p>
+                    <button id="btn-install-dashboard" class="btn-primary"
+                        style="width: auto; padding: 0.8rem 2rem; background: linear-gradient(135deg, var(--secondary), var(--primary)); color: #0f172a; font-weight: 700;">Install
+                        Now</button>
+                </div>
+
+                <!-- Toggle Removed: Auto Detection Active -->
+
+                <div class="scan-container glass-panel">
+                    <div class="scan-tabs">
+                        <button class="scan-tab active" data-type="face">Face Scan</button>
+                        <button class="scan-tab" data-type="qr">QR Scan</button>
+                    </div>
+
+                    <div class="camera-wrapper">
+                        <!-- Face Video -->
+                        <video id="video-feed" autoplay muted playsinline></video>
+                        <canvas id="overlay-canvas"></canvas>
+
+                        <!-- QR Scanner Container -->
+                        <div id="qr-reader" style="display:none; width: 100%;"></div>
+
+                        <div class="scan-overlay">
+                            <div class="scan-line"></div>
+                        </div>
+
+                        <!-- Result Display Overlay -->
+                        <div id="scan-result-card" class="result-card-overlay" style="display: none;">
+                            <div class="result-content glass-card">
+                                <div class="result-photo-wrapper">
+                                    <img id="result-photo" src="" alt="User">
+                                    <div id="result-type-badge" class="result-type-badge">IN</div>
+                                </div>
+                                <div class="result-info">
+                                    <h4 id="result-name">User Name</h4>
+                                    <p id="result-emp-id">EMP-000</p>
+                                    <div id="result-message" class="result-status-msg">Success Message</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="attendance-status" class="status-msg">System Ready</div>
+                </div>
+            </section>
+
+            <!-- Register View -->
+            <section id="register-view" class="view">
+                <div class="glass-card register-card">
+                    <h3>Register New Employee</h3>
+                    <form id="register-form">
+                        <div class="form-grid">
+                            <div class="input-group">
+                                <label>Full Name</label>
+                                <input type="text" id="reg-name" required placeholder="John Doe">
+                            </div>
+                            <div class="input-group">
+                                <label>Employee ID</label>
+                                <input type="text" id="reg-empid" required placeholder="EMP-001">
+                            </div>
+                        </div>
+
+                        <div class="face-capture-area" style="margin-top: 1.5rem;">
+                            <div class="capture-options" style="display: flex; gap: 1rem; margin-bottom: 1rem;">
+                                <button type="button" id="btn-start-reg-cam" class="btn-secondary" style="flex: 1;">Use
+                                    Camera</button>
+                                <button type="button" id="btn-upload-photo" class="btn-secondary"
+                                    style="flex: 1;">Upload Photo (1MB Max)</button>
+                                <input type="file" id="file-input-reg" accept="image/*" style="display: none;">
+                            </div>
+
+                            <div id="reg-video-container" style="display:none; position: relative;">
+                                <video id="register-video" autoplay muted playsinline
+                                    style="border-radius: 8px; border: 1px solid var(--glass-border);"></video>
+                                <button type="button" id="btn-capture-face" class="btn-primary"
+                                    style="position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);">Capture
+                                    Frame</button>
+                            </div>
+
+                            <div id="final-image-preview" style="display: none; margin-top: 1rem; text-align: center;">
+                                <img id="preview-img" src=""
+                                    style="max-height: 200px; border-radius: 8px; border: 2px solid var(--primary); display: inline-block;">
+                                <p style="color: var(--success); margin-top: 0.5rem; font-weight: 600;"><i
+                                        class="fas fa-check"></i> Photo Ready</p>
+                            </div>
+                        </div>
+
+                        <div id="qr-display-area" style="display:none; text-align: center; margin-top: 20px;">
+                            <p style="margin-bottom: 0.5rem; color: var(--text-muted);">Generated QR Code:</p>
+                            <div id="qrcode"
+                                style="padding: 10px; background: white; width: fit-content; margin: 0 auto; border-radius: 8px;">
+                            </div>
+                        </div>
+
+                        <button type="submit" id="btn-complete-reg" class="btn-success" disabled
+                            style="margin-top: 2rem;">Complete Registration</button>
+                    </form>
+                </div>
+            </section>
+
+            <!-- Users Management View -->
+            <section id="users-view" class="view">
+                <div class="glass-panel users-panel">
+                    <div class="logs-header">
+                        <h3>Registered Users</h3>
+                        <div class="logs-actions">
+                            <input type="text" id="user-search" placeholder="Search users..." class="search-input">
+                            <button id="btn-refresh-users" class="btn-secondary"><i class="fas fa-sync"></i></button>
+                        </div>
+                    </div>
+                    <div class="user-grid" id="users-list-container">
+                        <!-- User Cards will be injected here -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- Logs View -->
+            <section id="logs-view" class="view">
+                <div class="glass-panel logs-panel">
+                    <div class="logs-header">
+                        <h3>Attendance Logs</h3>
+                        <div class="logs-actions">
+                            <button id="btn-download-pdf" class="btn-primary"><i class="fas fa-file-pdf"></i> Download
+                                PDF</button>
+                            <button id="btn-refresh-logs" class="btn-secondary"><i class="fas fa-sync"></i>
+                                Refresh</button>
+                            <button id="btn-clear-logs" class="btn-secondary"
+                                style="background: #ef4444; color: white;"><i class="fas fa-trash"></i> Clear
+                                All</button>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table id="logs-table">
+                            <thead>
+                                <tr>
+                                    <th>Emp ID</th>
+                                    <th>Name</th>
+                                    <th>Type</th>
+                                    <th>Time</th>
+                                    <th>Date</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <!-- Dynamic Rows -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+</body>
+
+</html>
