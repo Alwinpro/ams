@@ -29,21 +29,6 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.css" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.5.13/cropper.min.js"></script>
     <!-- Main App -->
-    <script>
-        (function () {
-            var ua = navigator.userAgent;
-            var isLegacy = false;
-            if (ua.indexOf("Android") >= 0) {
-                var androidVersion = parseFloat(ua.slice(ua.indexOf("Android") + 8));
-                if (androidVersion < 5.0) isLegacy = true;
-            }
-            if (!window.Promise || !window.fetch) isLegacy = true;
-            if (isLegacy) {
-                // Stop loading modern app.js by hijacking the tag or just redirecting immediately
-                window.location.href = 'index-legacy.html';
-            }
-        })();
-    </script>
     <script defer src="app.js"></script>
 </head>
 <body>
