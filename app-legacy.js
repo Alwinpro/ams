@@ -1,5 +1,5 @@
-// SecureFace Legacy (Optimized for Speed)
-console.log("Legacy Fast App Starting...");
+// SecureFace Legacy (Ultra-Light)
+console.log("Ultra-Light App Starting...");
 // --- Configuration ---
 var firebaseConfig = {
     apiKey: "AIzaSyCzyyMmTPRBB4SMog88mlTcZFI9rMDxr4Y",
@@ -13,245 +13,218 @@ var firebaseConfig = {
 var db;
 var video = document.getElementById('webcam');
 var statusDiv = document.getElementById('connection-status');
-var scanner = null;
+var canvas = document.createElement('canvas'); // Off-screen canvas for processing
+var ctx = canvas.getContext('2d', { willReadFrequently: true });
 var faceMatcher = null;
 var isProcessing = false;
+var debugLog = document.getElementById('debug-log');
+function log(msg) {
+    console.log(msg);
+    if (debugLog.style.display === 'block') {
+        debugLog.innerHTML += "<div>" + msg + "</div>";
+        debugLog.scrollTop = debugLog.scrollHeight;
+    }
+}
 // --- Init ---
 function init() {
     startClock();
-    // 1. Start Camera IMMEDIATELY (Don't wait for DB/AI)
-    startCameraFast();
-    // 2. Load Firebase in Background
+    statusDiv.innerText = "Starting Camera...";
+    // 1. Camera First
+    startCamera();
+    // 2. Firebase Async
     setTimeout(function () {
         try {
             firebase.initializeApp(firebaseConfig);
             db = firebase.firestore();
-            console.log("DB Connected");
-            loadUsersForMatching();
-        } catch (e) {
-            console.error("DB Error", e);
-        }
-    }, 500);
-    // 3. Load Face AI (Heavy) - Delay slightly to let camera start
-    setTimeout(loadFaceAPI, 2000);
+            log("DB Connected");
+            loadUsers();
+        } catch (e) { log("DB Error: " + e.message); }
+    }, 1000);
+    // 3. Face AI Async
+    setTimeout(loadAI, 3000);
 }
-// --- Fast Camera Logic (Native First) ---
-function startCameraFast() {
-    statusDiv.innerText = "Starting Camera...";
-    var constraints = {
-        video: { facingMode: "user" }, // Front camera preferred for Face ID
-        audio: false
-    };
-    // A. Modern API
+// --- Camera ---
+function startCamera() {
+    var constraints = { video: { facingMode: "user" }, audio: false };
     if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
         navigator.mediaDevices.getUserMedia(constraints)
-            .then(function (stream) {
-                video.srcObject = stream;
-                video.play();
-                statusDiv.innerText = "Camera Active (Modern)";
-                startQR(); // Start scanning logic
-            })
-            .catch(function (err) {
-                console.error(err);
-                tryLegacyCamera();
+            .then(handleStream).catch(function () {
+                log("Modern gum failed, trying legacy");
+                tryLegacy();
             });
     } else {
-        tryLegacyCamera();
+        tryLegacy();
     }
 }
-function tryLegacyCamera() {
-    // B. Legacy API (Webkit/Moz)
+function tryLegacy() {
     var getUserMedia = navigator.webkitGetUserMedia || navigator.mozGetUserMedia;
-    if (!getUserMedia) {
-        statusDiv.innerText = "Camera Not Supported";
-        return;
+    if (getUserMedia) {
+        getUserMedia.call(navigator, { video: true }, handleStream, function (e) {
+            statusDiv.innerText = "Cam Fail: " + e.name;
+        });
+    } else {
+        statusDiv.innerText = "Cam Not Supported";
     }
-    getUserMedia.call(navigator, { video: true }, function (stream) {
-        if (window.webkitURL) {
-            video.src = window.webkitURL.createObjectURL(stream);
-        } else {
-            video.src = stream;
+}
+function handleStream(stream) {
+    if (window.webkitURL) video.src = window.webkitURL.createObjectURL(stream);
+    else video.srcObject = stream; // Modern browsers
+    // Some old browsers need this
+    if (video.srcObject) video.srcObject = stream;
+    video.play();
+    statusDiv.innerText = "Camera Active. Starting Scan...";
+    // Start Scan Loop
+    requestAnimationFrame(scanLoop);
+}
+// --- Scanning Loop (The Heart) ---
+function scanLoop() {
+    if (video.readyState === video.HAVE_ENOUGH_DATA) {
+        // 1. Setup Canvas if needed
+        if (canvas.width !== video.videoWidth) {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
         }
-        video.play();
-        statusDiv.innerText = "Camera Active (Legacy)";
-        startQR();
-    }, function (err) {
-        statusDiv.innerText = "Camera Denied: " + err.name;
-    });
-}
-// --- QR Logic (Instascan as fallback or secondary?) ---
-// Actually, Instascan might conflict with manual getUserMedia on old devices.
-// Let's use a simpler approach for QR if standard camera is running.
-// We will use a lightweight JSQR library if possible, but Instascan handles the camera itself.
-// To fix "Camera not enabling", let's use Instascan ONLY if manual fail, OR rely on manual video + canvas scan.
-function startQR() {
-    // We already have video running.
-    // Let's try to scan the video feed 
-    // Load Instascan later? No, let's use a simple distinct QR lib or just rely on Face for now?
-    // User asked for QR too.
-    // Instascan usually wants to control the camera.
-    // Let's try to initialize it on the EXISTING video element if possible, 
-    // or just let it take over?
-    // Only start scanner if camera didn't start manually?
-    // Actually, Instascan is robust. Let's try to use it for *everything* (QR + Video Feed)
-    if (!video.srcObject && !video.src) {
-        // If manual failed, try Instascan
-        try {
-            scanner = new Instascan.Scanner({ video: video, mirror: true });
-            scanner.addListener('scan', function (content) {
-                processAttendance(content, 'QR');
-            });
-            Instascan.Camera.getCameras().then(function (cameras) {
-                if (cameras.length > 0) {
-                    scanner.start(cameras[0]); // Front?
-                    statusDiv.innerText = "QR Scanner Active";
-                }
-            });
-        } catch (e) { console.error(e); }
+        // 2. Draw Frame
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        // 3. Scan QR (Every Frame - It's fast)
+        if (!isProcessing) {
+            var imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            var code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: "dontInvert" });
+            if (code) {
+                log("QR Found: " + code.data);
+                processAttendance(code.data, "QR");
+            }
+        }
     }
+    // Loop
+    requestAnimationFrame(scanLoop);
 }
-// --- Face API Logic ---
-function loadFaceAPI() {
-    statusDiv.innerText = "Loading AI..."; // Feedback
-    // Load ONLY the tiny detector first for speed
+// --- Face AI (Separate Slow Loop) ---
+function loadAI() {
+    statusDiv.innerText = "Loading Face AI...";
     faceapi.nets.tinyFaceDetector.loadFromUri('./models').then(function () {
-        console.log("TinyFace Ready");
-        statusDiv.innerText = "Face ID Ready";
-        // Start Loop
-        setInterval(detectFace, 500); // 2 FPS is fast enough for old tab
-        // Load others in background
+        log("Face AI Loaded");
+        statusDiv.innerText = "Ready (Face + QR)";
+        setInterval(detectFace, 800); // Check face every 800ms
+        // Load descriptors later
         faceapi.nets.faceLandmark68TinyNet.loadFromUri('./models');
         faceapi.nets.faceRecognitionNet.loadFromUri('./models');
-    }).catch(function (e) {
-        statusDiv.innerText = "Face ID Failed (QR Only)";
-    });
-}
-function loadUsersForMatching() {
-    db.collection('users').get().then(function (snapshot) {
-        var labeledDescriptors = [];
-        snapshot.forEach(function (doc) {
-            var data = doc.data();
-            if (data.descriptor) {
-                // Convert object/array to Float32Array
-                var arr = [];
-                for (var k in data.descriptor) arr.push(data.descriptor[k]);
-                var floatArr = new Float32Array(arr);
-                labeledDescriptors.push(new faceapi.LabeledFaceDescriptors(doc.id, [floatArr]));
-            }
-        });
-        if (labeledDescriptors.length > 0) {
-            faceMatcher = new faceapi.FaceMatcher(labeledDescriptors, 0.5);
-            console.log("Face Matcher Ready with " + labeledDescriptors.length + " users.");
-        }
-    }).catch(function (err) {
-        console.error("User Load Error:", err);
-    });
+    }).catch(function (e) { log("AI Fail: " + e); });
 }
 function detectFace() {
     if (isProcessing || !faceMatcher || video.paused || video.ended) return;
-    // Extremely lightweight options
-    var opts = new faceapi.TinyFaceDetectorOptions({ inputSize: 160, scoreThreshold: 0.5 });
+    // Ultra-tiny input size for speed on old Android
+    var opts = new faceapi.TinyFaceDetectorOptions({ inputSize: 128, scoreThreshold: 0.5 });
     faceapi.detectSingleFace(video, opts)
-        .withFaceLandmarks(true) // Need landmarks for recognition
+        .withFaceLandmarks(true)
         .withFaceDescriptor()
-        .then(function (result) {
-            if (result) {
-                var best = faceMatcher.findBestMatch(result.descriptor);
+        .then(function (res) {
+            if (res) {
+                var best = faceMatcher.findBestMatch(res.descriptor);
                 if (best.label !== 'unknown') {
-                    processAttendance(best.label, 'FACE');
+                    processAttendance(best.label, "FACE");
                 }
             }
-        }).catch(function (e) { /* ignore */ });
-}
-// --- Attendance Logic ---
-function processAttendance(scannedId, method) {
-    if (isProcessing) return; // Debounce
-    isProcessing = true;
-    // Immediate Visual Feedback
-    statusDiv.innerText = "Found: " + scannedId.substring(0, 5) + "...";
-    statusDiv.style.color = "#4a90e2";
-    // 1. Find User (Optimized)
-    // Assume scannedId is a Doc ID first (fastest)
-    db.collection('users').doc(scannedId).get().then(function (doc) {
-        if (doc.exists) {
-            doLog(doc.id, doc.data(), method);
-        } else {
-            // Fallback: Query by Emp ID
-            db.collection('users').where('empId', '==', scannedId).limit(1).get()
-                .then(function (snap) {
-                    if (!snap.empty) {
-                        var d = snap.docs[0];
-                        doLog(d.id, d.data(), method);
-                    } else {
-                        statusDiv.innerText = "Unknown User";
-                        isProcessing = false;
-                    }
-                });
-        }
-    }).catch(function (e) {
-        isProcessing = false;
-    });
-}
-function doLog(uid, userData, method) {
-    // 2. Determine IN/OUT (Fastest: default to IN, check last log in background?)
-    // To be super fast, we can just log it. But toggle is nicer.
-    db.collection('attendance_logs')
-        .where('userId', '==', uid)
-        .orderBy('timestamp', 'desc')
-        .limit(1)
-        .get()
-        .then(function (snap) {
-            var type = 'IN';
-            if (!snap.empty) {
-                var last = snap.docs[0].data();
-                if (last.type === 'IN') type = 'OUT';
-            }
-            // 3. Write Log
-            db.collection('attendance_logs').add({
-                userId: uid,
-                name: userData.name,
-                empId: userData.empId,
-                type: type,
-                method: method, // 'FACE' or 'QR'
-                timestamp: firebase.firestore.FieldValue.serverTimestamp()
-            });
-            // 4. Show Success (Don't wait for write completion)
-            showSuccess(userData, type);
-        }).catch(function (e) {
-            // If offline or error, default to IN and show success anyway
-            showSuccess(userData, 'IN (Offline?)');
         });
 }
-// --- UI Feedback ---
-function showSuccess(user, type) {
+function loadUsers() {
+    db.collection('users').get().then(function (snap) {
+        var descriptors = [];
+        snap.forEach(function (doc) {
+            var d = doc.data();
+            if (d.descriptor) {
+                var arr = []; // Convert format
+                for (var k in d.descriptor) arr.push(d.descriptor[k]);
+                descriptors.push(new faceapi.LabeledFaceDescriptors(doc.id, [new Float32Array(arr)]));
+            }
+        });
+        if (descriptors.length > 0) {
+            faceMatcher = new faceapi.FaceMatcher(descriptors, 0.5);
+            log("Users Loaded: " + descriptors.length);
+        }
+    });
+}
+// --- Processing ---
+function processAttendance(id, type) {
+    if (isProcessing) return;
+    isProcessing = true;
+    statusDiv.innerText = "Verifying: " + id;
+    statusDiv.style.color = "yellow";
+    // Find scan in User DB
+    findUser(id, function (user) {
+        if (!user) {
+            statusDiv.innerText = "User Not Found";
+            setTimeout(resetState, 2000);
+            return;
+        }
+        // Log it
+        logAttendance(user, type);
+    });
+}
+function findUser(id, cb) {
+    // Check Doc ID
+    var ref = db.collection('users');
+    ref.doc(id).get().then(function (d) {
+        if (d.exists) cb({ id: d.id, data: d.data() });
+        else {
+            // Check Emp ID
+            ref.where('empId', '==', id).limit(1).get().then(function (s) {
+                if (!s.empty) cb({ id: s.docs[0].id, data: s.docs[0].data() });
+                else cb(null);
+            });
+        }
+    });
+}
+function logAttendance(user, method) {
+    // Determine IN/OUT (Blind Toggle)
+    var logs = db.collection('attendance_logs');
+    logs.where('userId', '==', user.id).orderBy('timestamp', 'desc').limit(1).get()
+        .then(function (snap) {
+            var mode = 'IN';
+            if (!snap.empty && snap.docs[0].data().type === 'IN') mode = 'OUT';
+            logs.add({
+                userId: user.id,
+                name: user.data.name,
+                empId: user.data.empId,
+                type: mode,
+                method: method,
+                timestamp: firebase.firestore.FieldValue.serverTimestamp()
+            });
+            showSuccess(user.data, mode);
+        })
+        .catch(function (e) {
+            // Offline Fallback
+            showSuccess(user.data, "IN (Offline)");
+        });
+}
+function showSuccess(data, mode) {
     var overlay = document.getElementById('result-overlay');
-    var badge = document.getElementById('res-badge');
-    document.getElementById('res-photo').src = user.photo || 'https://via.placeholder.com/150';
-    document.getElementById('res-name').innerText = user.name;
-    document.getElementById('res-id').innerText = user.empId;
-    badge.innerText = type;
-    badge.style.background = (type === 'IN') ? '#28a745' : '#dc3545'; // Green / Red
+    document.getElementById('res-name').innerText = data.name;
+    document.getElementById('res-id').innerText = data.empId;
+    document.getElementById('res-photo').src = data.photo || "";
+    var b = document.getElementById('res-badge');
+    b.innerText = mode;
+    b.style.background = (mode === 'IN') ? 'green' : 'red';
     overlay.style.display = 'block';
-    // Hide after 3s
     setTimeout(function () {
         overlay.style.display = 'none';
-        isProcessing = false;
-        statusDiv.innerText = "System Ready (Scan Next)";
+        resetState();
     }, 3000);
 }
-function showError(msg) {
-    statusDiv.innerText = "Error: " + msg;
-    statusDiv.style.color = "red";
-    setTimeout(function () {
-        isProcessing = false;
-        statusDiv.innerText = "System Ready";
-        statusDiv.style.color = "#aaa";
-    }, 2000);
+function resetState() {
+    isProcessing = false;
+    statusDiv.innerText = "System Ready";
+    statusDiv.style.color = "#aaa";
 }
 function startClock() {
     setInterval(function () {
         document.getElementById('clock').innerText = new Date().toLocaleTimeString();
     }, 1000);
+    // Hidden debug toggle (Tap clock 5 times?)
+    document.getElementById('clock').onclick = function () {
+        var d = document.getElementById('debug-log');
+        d.style.display = (d.style.display === 'none') ? 'block' : 'none';
+    };
 }
 // Start
-init();
+window.onload = init;
