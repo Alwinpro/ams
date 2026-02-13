@@ -1,7 +1,0 @@
-{
-  "name": "secureface-web",
-  "version": "1.0.0",
-  "description": "SecureFace Attendance System",
-  "main": "app.js",
-  "dependencies": {}
-}
