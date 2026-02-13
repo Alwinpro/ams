@@ -1,112 +1,87 @@
 <!DOCTYPE html>
-<html lang="en">
-
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <!-- Legacy Android 4.4 Meta Tags -->
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
-    <title>SecureFace Access | Legacy</title>
-
-    <!-- CSS -->
-    <link rel="stylesheet" href="style-legacy.css">
-
-    <!-- Polyfills for Android 4.4 (Chrome 30-33) -->
-    <script
-        src="https://cdn.polyfill.io/v2/polyfill.min.js?features=default,es6,fetch,Promise,Array.prototype.includes,String.prototype.includes,Object.values"></script>
-
-    <!-- PWA -->
-    <link rel="manifest" href="manifest.json">
-
-    <!-- Fonts -->
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-
-    <!-- Scripts (Synchronous for safety) -->
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
-
-    <!-- Face API (Older Version if possible or same) -->
-    <script src="face-api.min.js"></script>
-    <!-- Simple QR Scanner that supports older browsers -->
-    <script src="https://rawgit.com/schmich/instascan-builds/master/instascan.min.js"></script>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Legacy Camera Test</title>
+    <style>
+        body {
+            background: black;
+            color: white;
+            font-family: sans-serif;
+            text-align: center;
+        }
+        #console {
+            text-align: left;
+            background: #222;
+            border: 1px solid #555;
+            height: 150px;
+            overflow: scroll;
+            padding: 5px;
+            font-size: 12px;
+            margin-top: 20px;
+        }
+        video {
+            width: 90%;
+            border: 2px solid white;
+            margin-top: 10px;
+        }
+        button {
+            font-size: 20px;
+            padding: 10px 20px;
+            margin: 20px;
+        }
+    </style>
 </head>
-
 <body>
-    <div id="loading-overlay">
-        <div class="glass-loader"></div>
-        <p id="loading-text">Loading Legacy Mode...</p>
-        <button onclick="document.getElementById('loading-overlay').style.display='none'"
-            style="margin-top:20px; padding:10px; background:red; color:white; border:none; border-radius:5px;">Force
-            Close Overlay</button>
-    </div>
-
-    <!-- On-Screen Console for Debugging on Tablet -->
-    <div id="debug-console"
-        style="position:fixed; bottom:0; left:0; width:100%; height:150px; background:rgba(0,0,0,0.8); color:#0f0; font-family:monospace; font-size:10px; overflow-y:scroll; z-index:9999; padding:5px; border-top:1px solid #333;">
-        <div>Debug Console Started...</div>
-    </div>
-
+    <h1>Legacy Mode</h1>
+    <p>Android 4.4 Camera Test</p>
+    <video id="vid" autoplay playsinline></video>
+    <br>
+    <button onclick="startCam()">Start Camera</button>
+    <div id="console">Log:<br></div>
     <script>
-        // Redirect console to screen
-        (function () {
-            var oldLog = console.log;
-            var oldErr = console.error;
-            var debugConsole = document.getElementById('debug-console');
-
-            function scrollDown() {
-                debugConsole.scrollTop = debugConsole.scrollHeight;
+        function log(msg) {
+            var c = document.getElementById('console');
+            c.innerHTML += msg + "<br>";
+            c.scrollTop = c.scrollHeight;
+        }
+        window.onerror = function (msg, url, line) {
+            log("ERROR: " + msg + " line " + line);
+        };
+        log("JS Engine Started.");
+        function startCam() {
+            log("Button Clicked. Asking permissions...");
+            var video = document.getElementById('vid');
+            var n = navigator;
+            // 1. Try Standard
+            if (n.mediaDevices && n.mediaDevices.getUserMedia) {
+                log("Method A: mediaDevices");
+                n.mediaDevices.getUserMedia({ video: true })
+                    .then(function (stream) {
+                        log("Stream Success (A)");
+                        video.srcObject = stream;
+                    })
+                    .catch(function (e) { log("Err A: " + e.message); tryB(); });
+            } else {
+                tryB();
             }
-
-            console.log = function (message) {
-                var el = document.createElement('div');
-                el.innerText = "> " + message;
-                debugConsole.appendChild(el);
-                scrollDown();
-                oldLog.apply(console, arguments);
-            };
-
-            console.error = function (message) {
-                var el = document.createElement('div');
-                el.style.color = "red";
-                el.innerText = "ERR: " + message;
-                debugConsole.appendChild(el);
-                scrollDown();
-                oldErr.apply(console, arguments);
-            };
-
-            window.onerror = function (msg, url, lineNo, columnNo, error) {
-                console.error(msg + " (" + lineNo + ":" + columnNo + ")");
-                return false;
-            };
-        })();
+            function tryB() {
+                // 2. Try Webkit
+                log("Method B: webkitGetUserMedia");
+                if (n.webkitGetUserMedia) {
+                    n.webkitGetUserMedia({ video: true }, function (stream) {
+                        log("Stream Success (B)");
+                        video.src = window.webkitURL.createObjectURL(stream);
+                        video.play();
+                    }, function (e) { log("Err B: " + e.name); });
+                } else {
+                    log("Method B failed or missing.");
+                }
+            }
+        }
+        // Auto start
+        setTimeout(startCam, 1000);
     </script>
-
-    <!-- Main Content -->
-    <div id="dashboard-container">
-        <div class="status-bar glass-panel">
-            <h2 style="color:white; margin:0;">SecureFace (Lite)</h2>
-            <div id="clock" style="color:#4a90e2; margin-top:5px;">00:00:00</div>
-        </div>
-
-        <div class="scan-container glass-panel">
-            <div class="camera-wrapper">
-                <video id="video-feed" autoplay playsinline style="width:100%; height:100%; object-fit: cover;"></video>
-                <canvas id="overlay-canvas" style="position: absolute; top: 0; left: 0;"></canvas>
-            </div>
-            <div id="status-msg" style="color: white; text-align: center; margin-top: 10px; font-size: 1.2rem;">Checking
-                Permissions...</div>
-        </div>
-
-        <div style="padding: 1rem; text-align: center;">
-            <button onclick="window.location.reload()"
-                style="padding: 10px 20px; background: #333; color: white; border: 1px solid #555;">Refresh App</button>
-        </div>
-    </div>
-
-    <script src="app-legacy.js"></script>
 </body>
-
 </html>
