@@ -12,16 +12,44 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
-    <!-- jsQR (Lightweight, pure JS) -->
+    <!-- jsQR (Lightweight) -->
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
-    <!-- Face API -->
-    <script src="face-api.min.js"></script>
+    <!-- Face API (DISABLED FOR QR TESTING) -->
+    <!-- <script src="face-api.min.js"></script> -->
+    <script>
+        // Force errors to show
+        window.onerror = function (msg, url, line) {
+            var d = document.getElementById('debug-log');
+            if (d) d.innerHTML += "<br><span style='color:red'>ERR: " + msg + " line " + line + "</span>";
+            return false;
+        };
+        // Polyfill requestAnimationFrame
+        var lastTime = 0;
+        var vendors = ['ms', 'moz', 'webkit', 'o'];
+        for (var x = 0; x < vendors.length && !window.requestAnimationFrame; ++x) {
+            window.requestAnimationFrame = window[vendors[x] + 'RequestAnimationFrame'];
+            window.cancelAnimationFrame = window[vendors[x] + 'CancelAnimationFrame']
+                || window[vendors[x] + 'CancelRequestAnimationFrame'];
+        }
+        if (!window.requestAnimationFrame)
+            window.requestAnimationFrame = function (callback, element) {
+                var currTime = new Date().getTime();
+                var timeToCall = Math.max(0, 16 - (currTime - lastTime));
+                var id = window.setTimeout(function () { callback(currTime + timeToCall); }, timeToCall);
+                lastTime = currTime + timeToCall;
+                return id;
+            };
+    </script>
 </head>
 <body style="background: #000; overflow: hidden; margin: 0;">
-    <!-- Debug Log (Hidden) -->
-    <div id="debug-log"
-        style="display:none; position:fixed; bottom:0; left:0; width:100%; height:30%; background:rgba(0,0,0,0.8); color:lime; font-size:10px; overflow-y:scroll; z-index:9999;">
+    <!-- Visual Heartbeat (Blinking Dot) to prove Loop is Alive -->
+    <div id="heartbeat-dot"
+        style="position:fixed; top:10px; right:10px; width:20px; height:20px; background:red; border-radius:50%; z-index:9999;">
     </div>
+    <!-- Debug Log (ALWAYS VISIBLE) -->
+    <div id="debug-log"
+        style="position:fixed; bottom:0; left:0; width:100%; height:150px; background:rgba(0,0,0,0.8); color:lime; font-size:14px; font-family:monospace; overflow-y:scroll; z-index:9999; border-top: 2px solid green; display:block !important;">
+        Waiting for JS...</div>
     <!-- 1. Top Status Bar -->
     <div class="status-bar glass-panel"
         style="position:fixed; top:0; left:0; width:100%; z-index:100; padding:10px; box-sizing:border-box;">
