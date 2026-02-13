@@ -3,10 +3,10 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-    <title>SecureFace Kiosk (Legacy)</title>
-    <!-- Use legacy styles -->
+    <title>SecureFace Legacy</title>
+    <!-- CSS -->
     <link rel="stylesheet" href="style-legacy.css">
-    <!-- Core Polyfills (Essential for Android 4.4) -->
+    <!-- Essential Polyfills for Android 4.4 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/es5-shim/4.5.15/es5-shim.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/es5-shim/4.5.15/es5-sham.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/json3/3.3.2/json3.min.js"></script>
@@ -19,8 +19,8 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
     <!-- jsQR (Lightweight) -->
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
-    <!-- Face API (DISABLED FOR QR TESTING) -->
-    <!-- <script src="face-api.min.js"></script> -->
+    <!-- Face API -->
+    <script src="face-api.min.js"></script>
     <script>
         // Force errors to show
         window.onerror = function (msg, url, line) {
@@ -28,51 +28,49 @@
             if (d) d.innerHTML += "<br><span style='color:red'>ERR: " + msg + " line " + line + "</span>";
             return false;
         };
-        // Polyfill requestAnimationFrame
-        var lastTime = 0;
-        var vendors = ['ms', 'moz', 'webkit', 'o'];
-        for (var x = 0; x < vendors.length && !window.requestAnimationFrame; ++x) {
-            window.requestAnimationFrame = window[vendors[x] + 'RequestAnimationFrame'];
-            window.cancelAnimationFrame = window[vendors[x] + 'CancelAnimationFrame']
-                || window[vendors[x] + 'CancelRequestAnimationFrame'];
-        }
-        if (!window.requestAnimationFrame)
-            window.requestAnimationFrame = function (callback, element) {
-                var currTime = new Date().getTime();
-                var timeToCall = Math.max(0, 16 - (currTime - lastTime));
-                var id = window.setTimeout(function () { callback(currTime + timeToCall); }, timeToCall);
-                lastTime = currTime + timeToCall;
-                return id;
-            };
     </script>
 </head>
 <body style="background: #000; overflow: hidden; margin: 0;">
-    <!-- Visual Heartbeat (Blinking Dot) to prove Loop is Alive -->
-    <div id="heartbeat-dot"
-        style="position:fixed; top:10px; right:10px; width:20px; height:20px; background:red; border-radius:50%; z-index:9999;">
+    <!-- Visual Scanning Box (Requested) -->
+    <div id="scan-box"
+        style="position:fixed; top:50%; left:50%; width:220px; height:220px; margin-left:-110px; margin-top:-110px; border:2px solid rgba(255,255,255,0.3); border-radius:15px; z-index:50; pointer-events:none; box-shadow: 0 0 10px rgba(0,0,0,0.5);">
+        <!-- Corners -->
+        <div
+            style="position:absolute; top:-2px; left:-2px; width:30px; height:30px; border-top:5px solid #4a90e2; border-left:5px solid #4a90e2; border-radius:15px 0 0 0;">
+        </div>
+        <div
+            style="position:absolute; top:-2px; right:-2px; width:30px; height:30px; border-top:5px solid #4a90e2; border-right:5px solid #4a90e2; border-radius:0 15px 0 0;">
+        </div>
+        <div
+            style="position:absolute; bottom:-2px; left:-2px; width:30px; height:30px; border-bottom:5px solid #4a90e2; border-left:5px solid #4a90e2; border-radius:0 0 0 15px;">
+        </div>
+        <div
+            style="position:absolute; bottom:-2px; right:-2px; width:30px; height:30px; border-bottom:5px solid #4a90e2; border-right:5px solid #4a90e2; border-radius:0 0 15px 0;">
+        </div>
+        <!-- Status Text -->
+        <div id="scan-text"
+            style="position:absolute; bottom:-40px; width:100%; text-align:center; color:#4a90e2; font-family:sans-serif; font-size:14px; font-weight:bold; text-shadow: 0 2px 4px #000;">
+            INITIALIZING...</div>
     </div>
-    <!-- Debug Log (ALWAYS VISIBLE) -->
-    <div id="debug-log"
-        style="position:fixed; bottom:0; left:0; width:100%; height:150px; background:rgba(0,0,0,0.8); color:lime; font-size:14px; font-family:monospace; overflow-y:scroll; z-index:9999; border-top: 2px solid green; display:block !important;">
-        Waiting for JS...</div>
+    <!-- Visual Heartbeat -->
+    <div id="heartbeat-dot"
+        style="position:fixed; top:15px; right:15px; width:15px; height:15px; background:red; border-radius:50%; z-index:9999; border: 2px solid white;">
+    </div>
     <!-- 1. Top Status Bar -->
     <div class="status-bar glass-panel"
-        style="position:fixed; top:0; left:0; width:100%; z-index:100; padding:10px; box-sizing:border-box;">
+        style="position:fixed; top:0; left:0; width:100%; z-index:40; padding:10px; box-sizing:border-box; background:rgba(0,0,0,0.6);">
         <div style="float:left; font-weight:bold; color:white;">SecureFace Kiosk</div>
         <div id="clock" style="float:right; color:#4a90e2;">00:00:00</div>
         <div style="clear:both;"></div>
-        <div id="connection-status" style="font-size:10px; color:#aaa; text-align:center;">Initializing...</div>
+        <div id="connection-status" style="font-size:10px; color:#aaa; text-align:center;">Loading...</div>
     </div>
     <!-- 2. Camera View -->
-    <div id="camera-container" style="position:fixed; top:50px; left:0; width:100%; bottom:0; background:#000;">
-        <video id="webcam" autoplay playsinline style="width:100%; height:100%; object-fit:cover; opacity:0.8;"></video>
+    <div id="camera-container"
+        style="position:fixed; top:0; left:0; width:100%; height:100%; background:#000; z-index:0;">
+        <video id="webcam" autoplay playsinline style="width:100%; height:100%; object-fit:cover; opacity:0.6;"></video>
         <canvas id="overlay" style="position:absolute; top:0; left:0; width:100%; height:100%;"></canvas>
-        <!-- Scan Line Animation -->
-        <div class="scan-line"
-            style="position:absolute; top:0; left:0; width:100%; height:2px; background:#4a90e2; box-shadow:0 0 10px #4a90e2; animation: scan 3s infinite;">
-        </div>
     </div>
-    <!-- 3. Result Overlay (Start Hidden) -->
+    <!-- 3. Result Overlay -->
     <div id="result-overlay"
         style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.9); z-index:200; text-align:center;">
         <div style="margin-top:20%;">
@@ -82,37 +80,21 @@
             <h3 id="res-id" style="color:#aaa; margin:0;">...</h3>
             <div id="res-badge"
                 style="display:inline-block; padding:10px 30px; border-radius:30px; background:#28a745; color:white; font-size:20px; margin-top:20px; font-weight:bold;">
-                SUCCESS (IN)
+                SUCCESS
             </div>
-            <p id="res-msg" style="color:white; margin-top:20px;">Attendance Marked</p>
         </div>
     </div>
-    <!-- 4. Controls (Bottom) -->
-    <div style="position:fixed; bottom:20px; width:100%; text-align:center; z-index:150;">
-        <button onclick="window.location.reload()"
-            style="background:#333; color:white; border:1px solid #555; padding:5px 10px; border-radius:5px; font-size:12px;">Refresh
-            App</button>
-        <div style="margin-top:5px; color:#555; font-size:10px;">Legacy Mode (Android 4.4)</div>
-    </div>
-    <!-- Logic Script -->
+    <!-- Debug Log -->
+    <div id="debug-log"
+        style="position:fixed; bottom:0; left:0; width:100%; height:120px; background:rgba(0,0,0,0.8); color:lime; font-size:10px; font-family:monospace; overflow-y:scroll; z-index:9999; border-top: 2px solid green;">
+        Waiting...</div>
+    <!-- App Logic -->
     <script src="app-legacy.js"></script>
-    <style>
-        @keyframes scan {
-            0% {
-                top: 0%;
-                opacity: 0;
-            }
-            10% {
-                opacity: 1;
-            }
-            90% {
-                opacity: 1;
-            }
-            100% {
-                top: 100%;
-                opacity: 0;
-            }
-        }
-    </style>
+    <script>
+        // Clock
+        setInterval(function () {
+            document.getElementById('clock').innerText = new Date().toLocaleTimeString();
+        }, 1000);
+    </script>
 </body>
 </html>
